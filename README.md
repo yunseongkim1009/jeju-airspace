@@ -121,9 +121,11 @@ Every OpenSky "state" is a flat array; the app reads it by documented index (`ic
 OpenSky **does not send permissive CORS headers**, so a browser page *cannot* call it directly — and it now uses OAuth2 for authenticated access. This app handles it with a three-step source chain, tried in order:
 
 ```
-1. Local server  (/api/states)  →  OAuth2, same-origin, no CORS, higher limits   ✅ best
-2. Public proxy  (allorigins)   →  anonymous, shared IP, frequently rate-limited  ⚠️ flaky
-3. Demo feed     (synthetic)    →  realistic Jeju traffic through the same pipeline 🧪 never blank
+1. Backend  (/api/states)   →  server.py or Vercel function, same-origin, no CORS   ✅ best
+     ├─ authenticated OpenSky   (when OAUTH creds are set)
+     └─ adsb.fi                 (keyless fallback — real data, zero setup)
+2. Public proxy (allorigins)  →  anonymous OpenSky, shared IP, often rate-limited    ⚠️ flaky
+3. Demo feed (synthetic)      →  realistic Jeju traffic through the same pipeline     🧪 never blank
 ```
 
 Live failures auto-fall back; a valid response promotes back up. Errors, empty boxes, and rate limits are all handled without ever breaking the poll loop or losing the last good data.
@@ -155,7 +157,7 @@ A couple of honest limitations, by design:
 
 - **OpenSky's anonymous tier is tight** (~1 request / 10 s, shared) and its public-proxy IP is frequently rate-limited. For dependable live data, use the [authenticated server](#-authenticated-live-data-recommended).
 - **There is no schedule/delay field in OpenSky's live feed.** It's raw ADS-B — position, speed, altitude. So "delayed" here means a detected **holding pattern** (aircraft circling near the field), which is the best real-time proxy available without a paid schedule API. In demo mode, delays are assigned so the feature is fully visible. Wiring in a schedule provider (AeroDataBox / FlightAware) is a natural next step.
-- **The [hosted demo](https://jeju-airspace.vercel.app/) is static** (no `server.py`), so it uses the public proxy and, when that's rate-limited, the demo feed. Run it locally with the [authenticated server](#-authenticated-live-data-recommended) — or add a serverless function — for dependable real traffic.
+- **The [hosted site](https://jeju-airspace.vercel.app/) shows real traffic** via a Vercel serverless function (`api/states.py`). It uses authenticated OpenSky when credentials are set, and otherwise falls back to the keyless [adsb.fi](https://adsb.fi/) community feed — so it works with **zero setup**. If every source is momentarily down it shows the demo feed so the map is never blank.
 
 ---
 
