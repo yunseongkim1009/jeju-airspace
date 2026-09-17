@@ -1298,22 +1298,26 @@
   async function fetchStates() {
     const q = bboxQuery();
 
-    // One-time probe: is the bundled server running at serverEndpoint?
+    // One-time probe: is a backend answering /api/states? We identify
+    // it by a JSON content-type (our server.py or the Vercel function),
+    // versus a static host's HTML 404 — so even a momentary 429 from the
+    // backend still counts as "server present" and doesn't drop to proxy.
     if (useServer === null) {
       try {
         const r = await fetch(CONFIG.api.serverEndpoint + q, { cache: "no-store" });
-        if (r.ok) {
+        const ct = r.headers.get("content-type") || "";
+        if (ct.includes("application/json")) {
+          useServer = true;                    // it's our backend
+          if (r.status === 429) throw new Error("RATELIMIT");
+          if (!r.ok) throw new Error("HTTP" + r.status);
           const j = await r.json();
-          if (j && (Array.isArray(j.states) || j.states === null)) {
-            useServer = true;                 // it's our server
-            if (j.error) throw new Error(/limit/i.test(j.error) ? "RATELIMIT" : "HTTPserver");
-            return j;
-          }
+          if (j.error) throw new Error(/limit|unavailable/i.test(j.error) ? "RATELIMIT" : "HTTPserver");
+          return j;
         }
-        useServer = false;                     // some other 200 (static host)
+        useServer = false;                     // static host → use proxy
       } catch (e) {
-        if (e.message === "RATELIMIT") throw e; // server up but rate limited
-        useServer = false;                     // no server → use proxy
+        if (e.message === "RATELIMIT" || (e.message || "").startsWith("HTTP")) throw e;
+        useServer = false;                     // no backend → use proxy
       }
     }
 
@@ -1322,7 +1326,7 @@
       if (r.status === 429) throw new Error("RATELIMIT");
       if (!r.ok) throw new Error("HTTP" + r.status);
       const j = await r.json();
-      if (j.error) throw new Error(/limit/i.test(j.error) ? "RATELIMIT" : "HTTPserver");
+      if (j.error) throw new Error(/limit|unavailable/i.test(j.error) ? "RATELIMIT" : "HTTPserver");
       return j;
     }
 
@@ -1423,7 +1427,12 @@
   let liveFailStreak = 0;
   function noteLiveFail() {
     liveFailStreak++;
-    if (state.mode === "live" && liveFailStreak >= CONFIG.demo.autoAfterFails) {
+    // Only fall back to the synthetic demo when there's NO real backend
+    // (i.e. the flaky public proxy). With a server/serverless function
+    // in front of OpenSky, keep showing the last real data and just
+    // reconnect — the user asked for real flights, not synthetic ones.
+    if (state.mode === "live" && !useServer &&
+        liveFailStreak >= CONFIG.demo.autoAfterFails) {
       switchMode("demo", /*auto*/ true);
     }
   }
@@ -1438,7 +1447,7 @@
         const m = e.message || "";
         if (m === "RATELIMIT") {
           setStatus("warn", useServer
-            ? "OpenSky rate limit — showing last data."
+            ? "OpenSky busy — reconnecting…"
             : "OpenSky busy (shared proxy limit) — showing last data.");
         } else if (m.startsWith("HTTP")) {
           setStatus("error", `Feed returned ${m} — retrying…`);
