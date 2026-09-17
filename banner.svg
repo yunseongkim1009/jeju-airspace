@@ -1,0 +1,89 @@
+<svg width="1200" height="380" viewBox="0 0 1200 380" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1120"/>
+      <stop offset="1" stop-color="#0a0e17"/>
+    </linearGradient>
+    <linearGradient id="alt" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ff4d4d"/>
+      <stop offset="0.28" stop-color="#ff9e3d"/>
+      <stop offset="0.5" stop-color="#ffe14d"/>
+      <stop offset="0.78" stop-color="#4dd0ff"/>
+      <stop offset="1" stop-color="#6f8cff"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#4dd0ff" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#4dd0ff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="ds" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-color="#000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+
+  <!-- backdrop -->
+  <rect width="1200" height="380" fill="url(#bg)"/>
+  <circle cx="880" cy="200" r="360" fill="url(#glow)"/>
+
+  <!-- faint radar grid -->
+  <g stroke="#4dd0ff" stroke-opacity="0.10" fill="none">
+    <circle cx="880" cy="200" r="90"/>
+    <circle cx="880" cy="200" r="150"/>
+    <circle cx="880" cy="200" r="210"/>
+    <line x1="670" y1="200" x2="1090" y2="200"/>
+    <line x1="880" y1="10" x2="880" y2="390"/>
+  </g>
+
+  <!-- stylized Jeju island silhouette -->
+  <path d="M812 236 q-14 -30 24 -40 q40 -30 96 -18 q52 -4 76 20 q26 10 10 34 q6 26 -34 30 q-40 20 -96 12 q-58 8 -76 -14 q-22 -6 0 -24 z"
+        fill="#16324a" fill-opacity="0.9" stroke="#2a5c78" stroke-opacity="0.6" stroke-width="1.5"/>
+  <!-- Hallasan dot -->
+  <circle cx="884" cy="212" r="4" fill="#3ddc84" fill-opacity="0.85"/>
+  <text x="884" y="200" fill="#7fe3ad" font-size="10" text-anchor="middle" letter-spacing="0.5">Hallasan</text>
+  <!-- CJU airport marker -->
+  <rect x="838" y="196" width="9" height="9" rx="2" fill="#ffb454" stroke="#fff" stroke-width="1.5"/>
+  <text x="843" y="185" fill="#ffb454" font-size="10" text-anchor="middle" font-weight="700" letter-spacing="0.5">CJU</text>
+
+  <!-- plane glyphs, colored by altitude, rotated to headings -->
+  <g filter="url(#ds)">
+    <g transform="translate(770,120) rotate(35) scale(1.15)"><path d="M12 2 L14.4 10 L22 12.6 L22 14.4 L14 12.8 L13.4 19 L16 20.4 L16 21.6 L12 20.6 L8 21.6 L8 20.4 L10.6 19 L10 12.8 L2 14.4 L2 12.6 L9.6 10 Z" fill="#ff6b57" stroke="#fff" stroke-opacity="0.8" stroke-width="0.6" transform="translate(-12,-12)"/></g>
+    <g transform="translate(980,110) rotate(200) scale(1.05)"><path d="M12 2 L14.4 10 L22 12.6 L22 14.4 L14 12.8 L13.4 19 L16 20.4 L16 21.6 L12 20.6 L8 21.6 L8 20.4 L10.6 19 L10 12.8 L2 14.4 L2 12.6 L9.6 10 Z" fill="#ffd24d" stroke="#fff" stroke-opacity="0.8" stroke-width="0.6" transform="translate(-12,-12)"/></g>
+    <g transform="translate(1010,250) rotate(310) scale(1.1)"><path d="M12 2 L14.4 10 L22 12.6 L22 14.4 L14 12.8 L13.4 19 L16 20.4 L16 21.6 L12 20.6 L8 21.6 L8 20.4 L10.6 19 L10 12.8 L2 14.4 L2 12.6 L9.6 10 Z" fill="#4dd0ff" stroke="#fff" stroke-opacity="0.8" stroke-width="0.6" transform="translate(-12,-12)"/></g>
+    <g transform="translate(740,270) rotate(70) scale(1)"><path d="M12 2 L14.4 10 L22 12.6 L22 14.4 L14 12.8 L13.4 19 L16 20.4 L16 21.6 L12 20.6 L8 21.6 L8 20.4 L10.6 19 L10 12.8 L2 14.4 L2 12.6 L9.6 10 Z" fill="#6f8cff" stroke="#fff" stroke-opacity="0.8" stroke-width="0.6" transform="translate(-12,-12)"/></g>
+    <g transform="translate(905,300) rotate(150) scale(0.95)"><path d="M12 2 L14.4 10 L22 12.6 L22 14.4 L14 12.8 L13.4 19 L16 20.4 L16 21.6 L12 20.6 L8 21.6 L8 20.4 L10.6 19 L10 12.8 L2 14.4 L2 12.6 L9.6 10 Z" fill="#ff9e3d" stroke="#fff" stroke-opacity="0.8" stroke-width="0.6" transform="translate(-12,-12)"/></g>
+  </g>
+
+  <!-- LEFT: title block -->
+  <g transform="translate(72,96)">
+    <!-- logo tile -->
+    <rect x="0" y="0" width="52" height="52" rx="13" fill="#12203a" stroke="#2b4a6e"/>
+    <g transform="translate(14,14)" stroke="#4dd0ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/>
+    </g>
+
+    <text x="66" y="24" fill="#eaf1fb" font-size="42" font-weight="800" letter-spacing="0.5">Jeju Airspace</text>
+    <text x="68" y="52" fill="#8aa0c0" font-size="16" letter-spacing="3">LIVE FLIGHT RADAR</text>
+
+    <!-- live pill -->
+    <g transform="translate(68,84)">
+      <rect x="0" y="0" width="150" height="34" rx="17" fill="#101a2e" stroke="#24344f"/>
+      <circle cx="20" cy="17" r="6" fill="#3ddc84"/>
+      <text x="36" y="22" fill="#e8edf7" font-size="15" font-weight="700">Real-time</text>
+      <text x="118" y="22" fill="#8aa0c0" font-size="13">ADS-B</text>
+    </g>
+
+    <!-- altitude legend -->
+    <g transform="translate(68,134)">
+      <text x="0" y="0" fill="#5c6784" font-size="11" letter-spacing="1.5">ALTITUDE</text>
+      <rect x="0" y="8" width="240" height="9" rx="4.5" fill="url(#alt)"/>
+      <text x="0" y="34" fill="#7c88a3" font-size="11">Ground</text>
+      <text x="240" y="34" fill="#7c88a3" font-size="11" text-anchor="end">12 km+</text>
+    </g>
+
+    <!-- feature chips -->
+    <g transform="translate(0,190)" font-size="12.5" font-weight="600">
+      <g><rect x="0" y="0" width="118" height="28" rx="14" fill="#122036" stroke="#26405f"/><text x="59" y="19" fill="#bcd0ea" text-anchor="middle">Live trails</text></g>
+      <g transform="translate(128,0)"><rect x="0" y="0" width="150" height="28" rx="14" fill="#122036" stroke="#26405f"/><text x="75" y="19" fill="#bcd0ea" text-anchor="middle">Airline routes</text></g>
+      <g transform="translate(288,0)"><rect x="0" y="0" width="150" height="28" rx="14" fill="#122036" stroke="#26405f"/><text x="75" y="19" fill="#bcd0ea" text-anchor="middle">OAuth2 · OpenSky</text></g>
+    </g>
+  </g>
+</svg>

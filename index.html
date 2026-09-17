@@ -1,0 +1,1730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Jeju Airspace — Live Flight Radar</title>
+
+<!-- Leaflet CSS (map library, loaded from CDN — no build step needed) -->
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+  crossorigin=""
+/>
+
+<style>
+  /* ============================================================
+     THEME TOKENS — semantic variables, redefined for light mode
+     ============================================================ */
+  :root {
+    --bg:            #0a0e17;
+    --panel:         rgba(18, 24, 38, 0.82);
+    --panel-solid:   #121826;
+    --panel-border:  rgba(120, 150, 200, 0.16);
+    --text:          #e8edf7;
+    --text-dim:      #8a95ad;
+    --text-faint:    #5c6784;
+    --accent:        #4dd0ff;
+    --accent-warm:   #ffb454;
+    --danger:        #ff5c72;
+    --ok:            #3ddc84;
+    --shadow:        0 12px 40px rgba(0, 0, 0, 0.55);
+    --radius:        14px;
+    --map-filter:    none;
+  }
+
+  /* Light theme overrides (applied when <html data-theme="light">) */
+  :root[data-theme="light"] {
+    --bg:            #eef2f8;
+    --panel:         rgba(255, 255, 255, 0.9);
+    --panel-solid:   #ffffff;
+    --panel-border:  rgba(30, 50, 90, 0.14);
+    --text:          #14203a;
+    --text-dim:      #52607a;
+    --text-faint:    #8996ad;
+    --accent:        #0077b6;
+    --accent-warm:   #d97706;
+    --shadow:        0 10px 34px rgba(30, 50, 90, 0.16);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  /* Tabular figures keep numeric readouts from shifting width */
+  .tnum { font-variant-numeric: tabular-nums; }
+
+  /* ============================================================
+     MAP
+     ============================================================ */
+  #map {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background: var(--bg);
+  }
+
+  /* Dark mode: invert only the tile pane (keyless dark basemap).
+     Markers/trails live in other panes and stay untouched. */
+  .leaflet-tile-pane { transition: filter .3s ease; }
+  :root[data-theme="dark"] .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.94)
+            contrast(0.9) saturate(0.8);
+  }
+
+  /* ============================================================
+     HEADER (top bar)
+     ============================================================ */
+  header {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 500;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 12px 18px;
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--bg) 88%, transparent),
+      transparent
+    );
+    pointer-events: none;               /* let clicks fall through gaps to map */
+  }
+  header > * { pointer-events: auto; }  /* but children stay interactive */
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+  }
+  .brand .logo {
+    width: 34px; height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent) 18%, var(--panel-solid));
+    border: 1px solid var(--panel-border);
+    box-shadow: var(--shadow);
+  }
+  .brand .logo svg { width: 20px; height: 20px; }
+  .brand h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    line-height: 1;
+  }
+  .brand .sub {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 3px;
+    letter-spacing: 0.4px;
+  }
+
+  /* Live pill — aircraft count + connection status */
+  .pill {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 14px;
+    background: var(--panel);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--panel-border);
+    border-radius: 999px;
+    box-shadow: var(--shadow);
+    font-size: 13px;
+  }
+  .pill .count {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .pill .label { color: var(--text-dim); }
+
+  .dot {
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 70%, transparent);
+    animation: pulse 2s infinite;
+  }
+  .dot.warn  { background: var(--accent-warm); animation: none; }
+  .dot.error { background: var(--danger);      animation: none; }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0   color-mix(in srgb, var(--ok) 65%, transparent); }
+    70%  { box-shadow: 0 0 0 8px color-mix(in srgb, var(--ok) 0%,  transparent); }
+    100% { box-shadow: 0 0 0 0   color-mix(in srgb, var(--ok) 0%,  transparent); }
+  }
+
+  /* DEMO badge inside the header pill */
+  .mode-badge {
+    display: none;
+    align-items: center;
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    padding: 3px 7px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--accent-warm) 24%, transparent);
+    color: var(--accent-warm);
+    border: 1px solid color-mix(in srgb, var(--accent-warm) 45%, transparent);
+  }
+
+  .spacer { flex: 1; }
+
+  .status {
+    text-align: right;
+    font-size: 11.5px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+  .status .stamp { color: var(--text); font-weight: 600; }
+  .status .msg   { color: var(--accent-warm); }
+
+  /* ============================================================
+     CONTROLS (top-right toolbar)
+     ============================================================ */
+  .controls {
+    position: absolute;
+    top: 74px; right: 18px;
+    z-index: 500;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 216px;
+    max-height: calc(100vh - 94px);
+    overflow-y: auto;
+    padding-right: 2px;
+    scrollbar-width: thin;
+  }
+  .controls::-webkit-scrollbar { width: 6px; }
+  .controls::-webkit-scrollbar-thumb {
+    background: var(--panel-border); border-radius: 3px;
+  }
+  .card {
+    background: var(--panel);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 13px 14px;
+  }
+  .card .title {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-faint);
+    margin-bottom: 10px;
+    font-weight: 600;
+  }
+
+  /* Segmented toggle (dark / light map) */
+  .seg {
+    display: flex;
+    background: color-mix(in srgb, var(--text-faint) 14%, transparent);
+    border-radius: 9px;
+    padding: 3px;
+    gap: 3px;
+  }
+  .seg button {
+    flex: 1;
+    border: 0;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 7px 0;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background .18s ease, color .18s ease;
+  }
+  .seg button.active {
+    background: var(--panel-solid);
+    color: var(--text);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+
+  /* Altitude filter */
+  .filter-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 9px;
+  }
+  .filter-row select {
+    background: var(--panel-solid);
+    color: var(--text);
+    border: 1px solid var(--panel-border);
+    border-radius: 7px;
+    padding: 5px 7px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .filter-val {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 6px;
+    text-align: center;
+  }
+  .filter-val b { color: var(--text); }
+
+  /* Highlight-airport checkbox */
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    cursor: pointer;
+    user-select: none;
+  }
+  .check input { width: 15px; height: 15px; accent-color: var(--accent-warm); cursor: pointer; }
+
+  /* Card title with an inline reset button */
+  .card .title { display: flex; align-items: center; justify-content: space-between; }
+  .al-reset {
+    border: 0; background: transparent; cursor: pointer;
+    color: var(--accent); font-size: 10px; font-weight: 700;
+    letter-spacing: .3px; text-transform: none; padding: 0;
+  }
+  .al-reset:hover { text-decoration: underline; }
+
+  /* Airlines-in-view list (also the airline legend) */
+  .airline-list { display: flex; flex-direction: column; gap: 2px; max-height: 168px; overflow-y: auto; }
+  .al-row {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; border: 0; background: transparent;
+    padding: 6px 7px; border-radius: 8px; cursor: pointer;
+    color: var(--text); text-align: left;
+    transition: background .15s ease;
+  }
+  .al-row:hover { background: color-mix(in srgb, var(--text-faint) 14%, transparent); }
+  .al-row.active { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+  .al-dot {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.25) inset;
+    display: inline-block;
+  }
+  .al-name { flex: 1; font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .al-count { font-size: 11px; color: var(--text-dim); font-weight: 700; }
+  .al-empty { font-size: 12px; color: var(--text-faint); padding: 4px 2px; }
+
+  /* Header "delayed" chip */
+  .delay-chip {
+    display: none;
+    align-items: center;
+    gap: 4px;
+    font-size: 11.5px;
+    color: var(--danger);
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--danger) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--danger) 34%, transparent);
+    font-weight: 600;
+  }
+  .delay-chip .tnum { font-weight: 800; }
+
+  /* Detail-panel status colours */
+  .st-climb   { color: var(--ok); }
+  .st-descend { color: var(--accent-warm); }
+  .st-level   { color: var(--text); }
+  .st-delay   { color: var(--danger); }
+  .row .v .al-dot { margin-right: 7px; vertical-align: -1px; }
+
+  /* ============================================================
+     LEGEND (altitude → color)
+     ============================================================ */
+  .legend {
+    position: absolute;
+    bottom: 20px; left: 18px;
+    z-index: 500;
+    width: 210px;
+  }
+  .legend .bar {
+    height: 10px;
+    border-radius: 6px;
+    margin: 6px 0 5px;
+    /* warm (low) → cool (high) */
+    background: linear-gradient(90deg,
+      #ff4d4d 0%, #ff9e3d 28%, #ffe14d 50%, #4dd0ff 78%, #6f8cff 100%);
+  }
+  .legend .scale {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10.5px;
+    color: var(--text-dim);
+  }
+
+  /* ============================================================
+     DETAIL PANEL (slides in on plane click)
+     ============================================================ */
+  .detail {
+    position: absolute;
+    top: 74px; left: 18px;
+    z-index: 600;
+    width: 268px;
+    background: var(--panel);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    transform: translateX(-116%);
+    opacity: 0;
+    transition: transform .28s cubic-bezier(.22,1,.36,1), opacity .22s ease;
+    pointer-events: none;
+  }
+  .detail.open {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .detail-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 15px 16px 12px;
+    background: linear-gradient(135deg,
+      color-mix(in srgb, var(--accent) 16%, var(--panel-solid)),
+      var(--panel-solid));
+    border-bottom: 1px solid var(--panel-border);
+  }
+  .detail-head .call {
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  .detail-head .icao {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 3px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .detail-head .badge {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .6px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--accent-warm) 22%, transparent);
+    color: var(--accent-warm);
+    border: 1px solid color-mix(in srgb, var(--accent-warm) 40%, transparent);
+  }
+  .close-btn {
+    border: 0;
+    background: color-mix(in srgb, var(--text-faint) 20%, transparent);
+    color: var(--text);
+    width: 26px; height: 26px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .close-btn:hover { background: color-mix(in srgb, var(--danger) 40%, transparent); }
+
+  .detail-body { padding: 6px 16px 15px; }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--panel-border) 60%, transparent);
+    font-size: 13px;
+  }
+  .row:last-child { border-bottom: 0; }
+  .row .k { color: var(--text-dim); display: flex; align-items: center; gap: 7px; }
+  .row .v { font-weight: 600; }
+  .row .v.big { font-size: 15px; }
+  .vr-climb { color: var(--ok); }
+  .vr-descend { color: var(--accent-warm); }
+  .vr-level { color: var(--text-dim); }
+
+  /* Rotated plane marker (SVG inside a Leaflet divIcon) */
+  .plane-icon {
+    transition: filter .2s ease;
+    will-change: transform;
+    position: relative;
+  }
+  .plane-icon svg { display: block; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
+  .plane-icon.selected svg {
+    filter: drop-shadow(0 0 6px var(--accent)) drop-shadow(0 0 2px #fff);
+  }
+  .plane-icon.airport svg {
+    filter: drop-shadow(0 0 5px var(--accent-warm));
+  }
+
+  /* Delayed / holding ring — hidden unless the highlight toggle is on.
+     Toggling only flips a root attribute; no marker rebuild needed. */
+  .plane-icon .delay-ring { display: none; }
+  :root[data-hl-delayed] .plane-icon.is-delayed .delay-ring {
+    display: block;
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 26px; height: 26px;
+    margin: -13px 0 0 -13px;
+    border-radius: 50%;
+    border: 2px solid var(--danger);
+    animation: delayPulse 1.6s ease-out infinite;
+    pointer-events: none;
+  }
+  @keyframes delayPulse {
+    0%   { transform: scale(0.7); opacity: 0.9; }
+    100% { transform: scale(1.7); opacity: 0; }
+  }
+
+  /* Airport marker (CJU) */
+  .airport-marker {
+    width: 12px; height: 12px;
+    border-radius: 3px;
+    background: var(--accent-warm);
+    border: 2px solid #fff;
+    box-shadow: 0 0 10px var(--accent-warm);
+  }
+
+  /* Leaflet popup theming */
+  .leaflet-popup-content-wrapper {
+    background: var(--panel-solid);
+    color: var(--text);
+    border-radius: 10px;
+    border: 1px solid var(--panel-border);
+  }
+  .leaflet-popup-tip { background: var(--panel-solid); }
+  .leaflet-popup-content { margin: 10px 13px; font-size: 12.5px; }
+  .leaflet-container a.leaflet-popup-close-button { color: var(--text-dim); }
+
+  /* Attribution readability */
+  .leaflet-control-attribution {
+    background: var(--panel) !important;
+    color: var(--text-dim) !important;
+  }
+  .leaflet-control-attribution a { color: var(--accent) !important; }
+
+  /* ============================================================
+     RESPONSIVE — stack chrome on narrow screens
+     ============================================================ */
+  @media (max-width: 720px) {
+    header { flex-wrap: wrap; gap: 10px; padding: 10px 12px; }
+    .status { width: 100%; text-align: left; order: 3; }
+    .controls { top: auto; bottom: 20px; right: 12px; width: 172px; }
+    .legend { display: none; }
+    .detail { width: calc(100vw - 24px); left: 12px; }
+  }
+</style>
+</head>
+
+<body>
+  <div id="map"></div>
+
+  <!-- ===================== HEADER ===================== -->
+  <header>
+    <div class="brand">
+      <span class="logo">
+        <!-- Inline SVG plane mark (no emoji) -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 2 11 13" />
+          <path d="M22 2 15 22l-4-9-9-4 20-7z" />
+        </svg>
+      </span>
+      <div>
+        <h1>Jeju Airspace</h1>
+        <div class="sub">LIVE FLIGHT RADAR · OpenSky Network</div>
+      </div>
+    </div>
+
+    <div class="pill">
+      <span id="statusDot" class="dot"></span>
+      <span class="count tnum" id="aircraftCount">0</span>
+      <span class="label">aircraft in view</span>
+      <span class="delay-chip" id="delayChip">
+        <span class="tnum" id="delayCount">0</span> delayed
+      </span>
+      <span class="mode-badge" id="modeBadge">DEMO</span>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="status">
+      <div>Last updated <span class="stamp tnum" id="lastUpdated">—</span> <span id="tzLabel">KST</span></div>
+      <div class="msg" id="statusMsg">Connecting to OpenSky…</div>
+    </div>
+  </header>
+
+  <!-- ===================== CONTROLS ===================== -->
+  <div class="controls">
+    <div class="card">
+      <div class="title">Data Source</div>
+      <div class="seg" id="dataSeg">
+        <button data-mode="live" class="active">Live</button>
+        <button data-mode="demo">Demo</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="title">Map Style</div>
+      <div class="seg" id="themeSeg">
+        <button data-theme="dark" class="active">Dark</button>
+        <button data-theme="light">Light</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="title">Colour Planes By</div>
+      <div class="seg" id="colorSeg">
+        <button data-color="altitude" class="active">Altitude</button>
+        <button data-color="airline">Airline</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="title">
+        Airlines In View
+        <button class="al-reset" id="airlineReset" style="display:none">Show all</button>
+      </div>
+      <div class="airline-list" id="airlineList">
+        <div class="al-empty">No aircraft in view</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="title">Altitude Filter</div>
+      <div class="filter-row">
+        <span style="font-size:12.5px;color:var(--text-dim)">Show</span>
+        <select id="filterMode">
+          <option value="all">All</option>
+          <option value="below">Below</option>
+          <option value="above">Above</option>
+        </select>
+      </div>
+      <input type="range" id="altSlider" min="0" max="13000" step="500" value="6000" />
+      <div class="filter-val">Threshold: <b class="tnum" id="altValue">6,000 m</b></div>
+    </div>
+
+    <div class="card">
+      <label class="check">
+        <input type="checkbox" id="highlightAirport" checked />
+        Highlight CJU arrivals / departures
+      </label>
+      <label class="check" style="margin-top:11px">
+        <input type="checkbox" id="highlightDelayed" />
+        Highlight delayed / holding
+      </label>
+    </div>
+  </div>
+
+  <!-- ===================== LEGEND ===================== -->
+  <div class="legend card" id="legend">
+    <div class="title">Altitude</div>
+    <div class="bar"></div>
+    <div class="scale tnum">
+      <span>Ground</span>
+      <span>6 km</span>
+      <span>12 km+</span>
+    </div>
+  </div>
+
+  <!-- ===================== DETAIL PANEL ===================== -->
+  <aside class="detail" id="detailPanel">
+    <div class="detail-head">
+      <div>
+        <div class="call" id="dCall">—</div>
+        <div class="icao tnum" id="dIcao">—</div>
+        <span class="badge" id="dBadge" style="display:none">CJU RUNWAY</span>
+      </div>
+      <button class="close-btn" id="dClose" aria-label="Close details">✕</button>
+    </div>
+    <div class="detail-body">
+      <div class="row">
+        <span class="k">Airline</span>
+        <span class="v" id="dAirline"><span class="al-dot" id="dAirlineDot"></span><span id="dAirlineName">—</span></span>
+      </div>
+      <div class="row">
+        <span class="k">Status</span>
+        <span class="v" id="dStatus">—</span>
+      </div>
+      <div class="row" id="dDelayRow" style="display:none">
+        <span class="k">Delay</span>
+        <span class="v" id="dDelay">—</span>
+      </div>
+      <div class="row">
+        <span class="k">Origin country</span>
+        <span class="v" id="dCountry">—</span>
+      </div>
+      <div class="row">
+        <span class="k">Altitude</span>
+        <span class="v big tnum" id="dAlt">—</span>
+      </div>
+      <div class="row">
+        <span class="k">Ground speed</span>
+        <span class="v big tnum" id="dSpeed">—</span>
+      </div>
+      <div class="row">
+        <span class="k">Heading</span>
+        <span class="v tnum" id="dHeading">—</span>
+      </div>
+      <div class="row">
+        <span class="k">Vertical rate</span>
+        <span class="v tnum" id="dVert">—</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Leaflet JS from CDN -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin="">
+  </script>
+
+  <script>
+  "use strict";
+
+  /* ============================================================
+     CONFIG — everything tweakable lives here
+     ============================================================ */
+  const CONFIG = {
+    // Bounding box around Jeju Island (OpenSky query params)
+    bbox: { lamin: 33.0, lamax: 33.7, lomin: 126.0, lomax: 127.0 },
+
+    // Map view
+    center: [33.51, 126.52],   // Jeju City
+    zoom: 9,
+
+    // Polling — OpenSky anonymous limit is tight (~1 req / 10s).
+    // If you hit rate limits, raise this BEFORE anything else, or
+    // add credentials below (auth allows more frequent polling).
+    pollInterval: 10000,       // ms between fetches
+
+    // Data source priority:
+    //   1. Local server ("serverEndpoint") — the bundled server.py.
+    //      It performs the OpenSky OAuth2 client-credentials flow
+    //      SERVER-SIDE (keeps your secret off the page), attaches the
+    //      Bearer token, and returns JSON same-origin (zero CORS,
+    //      higher rate limit). START HERE for reliable live data:
+    //        OPENSKY_CLIENT_ID=... OPENSKY_CLIENT_SECRET=... python3 server.py
+    //   2. Public CORS proxy (anonymous) — flaky, shared rate limit.
+    //   3. Demo feed — synthetic traffic so the map is never empty.
+    // The app probes the local server once; if it isn't running it
+    // silently falls back to the proxy, then to demo.
+    api: {
+      url: "https://opensky-network.org/api/states/all",
+      serverEndpoint: "/api/states"   // same-origin path served by server.py
+    },
+
+    // CORS proxy.
+    // OpenSky does NOT send permissive CORS headers, so a purely
+    // browser-side app CANNOT call it directly — the browser blocks
+    // the response. We route through a public CORS proxy that echoes
+    // the JSON with proper headers. Set enabled:false only if you
+    // serve this same-origin with OpenSky or via your own backend.
+    //   template : {target} is replaced with the URL-encoded request
+    //   format   : "wrapped" => proxy returns { contents:"<json str>" }
+    //              "raw"     => proxy returns the JSON body verbatim
+    proxy: {
+      enabled: true,
+      template: "https://api.allorigins.win/get?url={target}",
+      format: "wrapped"
+    },
+
+    // Demo fallback.
+    // OpenSky's anonymous limit is shared across everyone using the
+    // public proxy, so live data often can't get through. When live
+    // polling fails repeatedly the dashboard auto-switches to a
+    // clearly-badged DEMO feed of synthetic Jeju-area traffic so the
+    // visualization stays alive. You can also toggle it manually.
+    demo: {
+      count: 12,               // synthetic aircraft
+      autoAfterFails: 2        // consecutive live failures before auto-demo
+    },
+
+    // Trail (last N positions per aircraft)
+    trailLength: 10,
+
+    // Jeju International Airport (CJU / RKPC) — for arrival/departure highlight
+    airport: {
+      code: "CJU",
+      icao: "RKPC",
+      lat: 33.5113,
+      lon: 126.4930,
+      // aircraft within this radius (km) AND low altitude are "near runway"
+      radiusKm: 8,
+      lowAltM: 1800
+    },
+
+    // Locale for timestamps
+    timeZone: "Asia/Seoul",
+    locale: "en-GB"
+  };
+
+  /* ============================================================
+     OpenSky state-vector array indices (per API docs)
+     ------------------------------------------------------------
+     Each "state" is a flat array; these are the fields we use.
+     ============================================================ */
+  const IDX = {
+    icao24: 0,        // string  — unique 24-bit ICAO address
+    callsign: 1,      // string  — flight callsign (may be blank)
+    origin_country: 2,
+    longitude: 5,     // WGS-84 deg
+    latitude: 6,      // WGS-84 deg
+    baro_altitude: 7, // metres (barometric)
+    on_ground: 8,     // bool
+    velocity: 9,      // m/s over ground
+    true_track: 10,   // deg clockwise from north (heading)
+    vertical_rate: 11,// m/s (positive = climbing)
+    geo_altitude: 13  // metres (geometric — fallback for baro)
+  };
+
+  /* ============================================================
+     AIRLINE REGISTRY
+     ------------------------------------------------------------
+     Callsigns start with a 3-letter ICAO airline code (e.g. KAL123
+     = Korean Air). We map that prefix to a display name + a brand
+     colour so aircraft/routes can be identified and coloured by
+     carrier. Unknown codes fall back to a generic entry.
+     ============================================================ */
+  const AIRLINES = {
+    KAL: { name: "Korean Air",       color: "#2b4c9b" },
+    AAR: { name: "Asiana Airlines",  color: "#d81a3a" },
+    JJA: { name: "Jeju Air",         color: "#f57f17" },
+    JNA: { name: "Jin Air",          color: "#41c0b5" },
+    TWB: { name: "T'way Air",        color: "#e8531f" },
+    ABL: { name: "Air Busan",        color: "#3f8fd8" },
+    ESR: { name: "Eastar Jet",       color: "#0a5fbf" },
+    APZ: { name: "Air Premia",       color: "#6c4bd8" },
+    CQH: { name: "Spring Airlines",  color: "#2aa84a" },
+    CES: { name: "China Eastern",    color: "#c81e2b" },
+    CSN: { name: "China Southern",   color: "#0b64b4" },
+    ANA: { name: "All Nippon (ANA)", color: "#1657a8" },
+    JAL: { name: "Japan Airlines",   color: "#b81c2c" }
+  };
+  const UNKNOWN_AIRLINE = { name: "Other / Unknown", color: "#8a95ad" };
+
+  // Resolve a callsign to its airline entry (+ the 3-letter code)
+  function airlineOf(callsign) {
+    const code = (callsign || "").trim().slice(0, 3).toUpperCase();
+    const a = AIRLINES[code];
+    return a ? { code, ...a } : { code: code || "—", ...UNKNOWN_AIRLINE };
+  }
+
+  /* ============================================================
+     MAP SETUP — Leaflet + swappable tile layers
+     ============================================================ */
+  const map = L.map("map", {
+    center: CONFIG.center,
+    zoom: CONFIG.zoom,
+    zoomControl: true,
+    attributionControl: true,
+    worldCopyJump: true
+  });
+  L.control.zoom({ position: "bottomright" }); // (default already added)
+
+  // Single OpenStreetMap tile layer for both themes (keyless, no
+  // watermark). Dark mode is produced with a CSS filter on the tile
+  // pane only — markers and trails live in separate panes, so they're
+  // unaffected. This avoids provider API-key requirements entirely.
+  L.tileLayer(
+    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    { maxZoom: 19, attribution:
+      '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors' }
+  ).addTo(map);
+
+  let currentTheme = "dark";
+  document.documentElement.dataset.theme = "dark"; // apply dark from load
+
+  // Airport marker for CJU / RKPC
+  const airportMarker = L.marker([CONFIG.airport.lat, CONFIG.airport.lon], {
+    icon: L.divIcon({
+      className: "",
+      html: '<div class="airport-marker" title="Jeju Int\'l (CJU / RKPC)"></div>',
+      iconSize: [12, 12],
+      iconAnchor: [6, 6]
+    }),
+    interactive: true
+  }).addTo(map).bindPopup("<b>Jeju International</b><br>CJU · RKPC");
+
+  /* ============================================================
+     UTILITIES
+     ============================================================ */
+
+  // Altitude → color (warm = low, cool = high). Interpolates across
+  // a small stop table matching the legend gradient.
+  function altColor(altM) {
+    if (altM == null || isNaN(altM)) return "#9aa5bd"; // unknown = grey
+    const stops = [
+      [0,     [255, 77,  77]],   // red     — ground
+      [3500,  [255, 158, 61]],   // orange
+      [6000,  [255, 225, 77]],   // yellow
+      [9500,  [77,  208, 255]],  // cyan
+      [13000, [111, 140, 255]]   // blue    — high
+    ];
+    const a = Math.max(0, Math.min(altM, 13000));
+    for (let i = 0; i < stops.length - 1; i++) {
+      const [a0, c0] = stops[i], [a1, c1] = stops[i + 1];
+      if (a >= a0 && a <= a1) {
+        const t = (a - a0) / (a1 - a0);
+        const r = Math.round(c0[0] + (c1[0] - c0[0]) * t);
+        const g = Math.round(c0[1] + (c1[1] - c0[1]) * t);
+        const b = Math.round(c0[2] + (c1[2] - c0[2]) * t);
+        return `rgb(${r},${g},${b})`;
+      }
+    }
+    return "rgb(111,140,255)";
+  }
+
+  // Haversine distance in km (for airport proximity)
+  function distanceKm(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const s =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+  }
+
+  // Is this aircraft near CJU's runway (low + close)?
+  function nearAirport(lat, lon, altM) {
+    if (lat == null || lon == null) return false;
+    const d = distanceKm(lat, lon, CONFIG.airport.lat, CONFIG.airport.lon);
+    return d <= CONFIG.airport.radiusKm &&
+           (altM == null || altM <= CONFIG.airport.lowAltM);
+  }
+
+  // Initial compass bearing (deg) from point a=[lat,lon] to b=[lat,lon]
+  function bearing(a, b) {
+    const φ1 = a[0] * Math.PI / 180, φ2 = b[0] * Math.PI / 180;
+    const Δλ = (b[1] - a[1]) * Math.PI / 180;
+    const y = Math.sin(Δλ) * Math.cos(φ2);
+    const x = Math.cos(φ1) * Math.sin(φ2) -
+              Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  }
+
+  // Classify a flight's phase. `rec` (existing plane record) lets us
+  // inspect the recent trail to detect circling = a holding pattern,
+  // which — with no schedule feed available from OpenSky — is our
+  // best live proxy for a delayed / stacked-up arrival.
+  function classifyStatus(d, rec) {
+    if (d.onGround) return { key: "ground",  label: "On ground" };
+    const distAp     = distanceKm(d.lat, d.lon, CONFIG.airport.lat, CONFIG.airport.lon);
+    const climbing   = d.vertRate != null && d.vertRate >  0.8;
+    const descending = d.vertRate != null && d.vertRate < -0.8;
+
+    // Cumulative heading change over the last few trail points → turning
+    let turn = 0;
+    if (rec && rec.trailPts && rec.trailPts.length >= 4) {
+      const pts = rec.trailPts.slice(-5);
+      let prev = null;
+      for (let i = 1; i < pts.length; i++) {
+        const br = bearing(pts[i - 1], pts[i]);
+        if (prev != null) {
+          let dd = Math.abs(br - prev);
+          if (dd > 180) dd = 360 - dd;
+          turn += dd;
+        }
+        prev = br;
+      }
+    }
+    const alt = d.alt == null ? 99999 : d.alt;
+    if (distAp <= 45 && turn > 55 && alt < 5000 && !climbing)
+      return { key: "holding",   label: "Holding" };
+    if (distAp <= 30 && descending && alt < 4500)
+      return { key: "approach",  label: "On approach" };
+    if (distAp <= 30 && climbing && alt < 6000)
+      return { key: "departing", label: "Departing" };
+    if (climbing)   return { key: "climb",   label: "Climbing" };
+    if (descending) return { key: "descend", label: "Descending" };
+    return { key: "cruise", label: "En route" };
+  }
+
+  // Marker/trail colour depends on the current "Colour by" mode
+  function markerColor(d) {
+    return state.colorBy === "airline"
+      ? (d.airline ? d.airline.color : UNKNOWN_AIRLINE.color)
+      : altColor(d.alt);
+  }
+
+  // Build a rotated-plane divIcon from a full aircraft object. Colour,
+  // airport highlight and delayed state are all derived from `d`.
+  function planeIcon(d, isSelected) {
+    const rot = d.heading || 0;
+    const color = markerColor(d);
+    const cls = "plane-icon" +
+      (isSelected ? " selected" : "") +
+      (d.airport ? " airport" : "") +
+      (d.delayed ? " is-delayed" : "");
+    // SVG points "up" (north) at 0°; rotate the whole glyph to heading.
+    // A separate ring element (styled in CSS, shown only when the
+    // "highlight delayed" toggle is on) marks delayed aircraft.
+    const svg = `
+      <span class="delay-ring"></span>
+      <svg width="26" height="26" viewBox="0 0 24 24"
+           style="transform: rotate(${rot}deg); transform-origin:50% 50%;">
+        <path d="M12 2 L14.4 10 L22 12.6 L22 14.4 L14 12.8 L13.4 19 L16 20.4 L16 21.6 L12 20.6 L8 21.6 L8 20.4 L10.6 19 L10 12.8 L2 14.4 L2 12.6 L9.6 10 Z"
+              fill="${color}" stroke="rgba(255,255,255,.85)" stroke-width="0.6"/>
+      </svg>`;
+    return L.divIcon({
+      className: cls,
+      html: svg,
+      iconSize: [26, 26],
+      iconAnchor: [13, 13]
+    });
+  }
+
+  // Format a Date in Asia/Seoul HH:MM:SS
+  function fmtTime(d) {
+    return new Intl.DateTimeFormat(CONFIG.locale, {
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour12: false, timeZone: CONFIG.timeZone
+    }).format(d);
+  }
+  const fmtNum = n => n.toLocaleString(CONFIG.locale);
+
+  /* ============================================================
+     AIRCRAFT STORE + smooth animation
+     ------------------------------------------------------------
+     Each aircraft keeps:
+       marker    — Leaflet marker (moves each animation frame)
+       trail     — polyline of recent positions
+       from/to   — lat/lon we interpolate between across a poll cycle
+       animStart — timestamp animation began
+     A single requestAnimationFrame loop lerps every plane so they
+     glide instead of teleporting when new data arrives.
+     ============================================================ */
+  const planes = new Map();   // icao24 -> record
+  let selectedId = null;
+  let lastGoodTime = null;
+
+  function upsertPlane(id, data) {
+    const now = performance.now();
+    let p = planes.get(id);
+
+    if (!p) {
+      // New aircraft — create marker + trail at its reported position
+      const marker = L.marker([data.lat, data.lon], {
+        icon: planeIcon(data, false),
+        riseOnHover: true,
+        keyboard: false
+      }).addTo(map);
+
+      const trail = L.polyline([[data.lat, data.lon]], {
+        color: markerColor(data),
+        weight: 2,
+        opacity: 0.5,
+        smoothFactor: 1.5
+      }).addTo(map);
+
+      marker.on("click", () => selectPlane(id));
+
+      p = {
+        marker, trail,
+        curLat: data.lat, curLon: data.lon,   // currently drawn position
+        fromLat: data.lat, fromLon: data.lon, // animation start
+        toLat: data.lat,   toLon: data.lon,   // animation target
+        animStart: now,
+        trailPts: [[data.lat, data.lon]],
+        data
+      };
+      planes.set(id, p);
+    } else {
+      // Existing — set a new interpolation target from current drawn pos
+      p.fromLat = p.curLat;
+      p.fromLon = p.curLon;
+      p.toLat = data.lat;
+      p.toLon = data.lon;
+      p.animStart = now;
+      p.data = data;
+
+      // Push onto trail (cap to trailLength)
+      p.trailPts.push([data.lat, data.lon]);
+      if (p.trailPts.length > CONFIG.trailLength) p.trailPts.shift();
+
+      // Refresh icon (heading/color/selection/airport/delay may change)
+      p.marker.setIcon(planeIcon(data, id === selectedId));
+      p.trail.setStyle({ color: markerColor(data) });
+    }
+    p.seen = true;
+  }
+
+  // Remove aircraft that dropped out of the box on this poll
+  function pruneMissing() {
+    for (const [id, p] of planes) {
+      if (!p.seen) {
+        map.removeLayer(p.marker);
+        map.removeLayer(p.trail);
+        planes.delete(id);
+        if (id === selectedId) closeDetail();
+      } else {
+        p.seen = false; // reset flag for next cycle
+      }
+    }
+  }
+
+  // Animation loop — lerp each plane from `from` to `to` over the poll
+  // interval so movement looks continuous.
+  function animate() {
+    const now = performance.now();
+    for (const p of planes.values()) {
+      const t = Math.min(1, (now - p.animStart) / CONFIG.pollInterval);
+      // ease-out for a gentle settle
+      const e = 1 - Math.pow(1 - t, 2);
+      p.curLat = p.fromLat + (p.toLat - p.fromLat) * e;
+      p.curLon = p.fromLon + (p.toLon - p.fromLon) * e;
+      p.marker.setLatLng([p.curLat, p.curLon]);
+    }
+    requestAnimationFrame(animate);
+  }
+  requestAnimationFrame(animate);
+
+  /* ============================================================
+     FILTER (altitude threshold) + airport highlight toggle
+     ============================================================ */
+  const state = {
+    mode: "live",           // live | demo (data source)
+    filterMode: "all",      // all | below | above
+    altThreshold: 6000,     // metres
+    highlightAirport: true,
+    colorBy: "altitude",    // altitude | airline
+    airlineFilter: null,    // null = all airlines, else a 3-letter code
+    highlightDelayed: false // pulse ring on delayed / holding aircraft
+  };
+
+  function passesFilter(altM) {
+    if (state.filterMode === "all") return true;
+    const a = altM == null ? 0 : altM;
+    return state.filterMode === "below"
+      ? a <= state.altThreshold
+      : a >= state.altThreshold;
+  }
+
+  // A plane is visible if it passes BOTH the altitude filter and the
+  // airline isolation (when an airline is selected, only its aircraft
+  // — and therefore only its routes/trails — stay on the map).
+  function isVisible(d) {
+    if (!passesFilter(d.alt)) return false;
+    if (state.airlineFilter && d.airline &&
+        d.airline.code !== state.airlineFilter) return false;
+    return true;
+  }
+
+  // Show/hide markers + trails per current filters without losing state
+  function applyFilter() {
+    for (const p of planes.values()) {
+      const show = isVisible(p.data);
+      const el = p.marker.getElement();
+      if (el) el.style.display = show ? "" : "none";
+      if (show) {
+        if (!map.hasLayer(p.trail)) p.trail.addTo(map);
+        // Emphasize routes when an airline is isolated
+        p.trail.setStyle({
+          opacity: state.airlineFilter ? 0.85 : 0.5,
+          weight:  state.airlineFilter ? 3 : 2
+        });
+      } else {
+        if (map.hasLayer(p.trail)) map.removeLayer(p.trail);
+      }
+    }
+  }
+
+  // Re-colour every marker + trail (used when "Colour by" changes)
+  function recolorAll() {
+    for (const p of planes.values()) {
+      p.marker.setIcon(planeIcon(p.data, p.data.icao24 === selectedId));
+      p.trail.setStyle({ color: markerColor(p.data) });
+    }
+  }
+
+  /* ============================================================
+     DETAIL PANEL
+     ============================================================ */
+  const $ = id => document.getElementById(id);
+  const panel = $("detailPanel");
+
+  function selectPlane(id) {
+    const prev = selectedId;
+    selectedId = id;
+    // refresh both markers' selected state
+    [prev, id].forEach(pid => {
+      const p = planes.get(pid);
+      if (p) p.marker.setIcon(planeIcon(p.data, pid === selectedId));
+    });
+    renderDetail(planes.get(id).data);
+    panel.classList.add("open");
+  }
+
+  function closeDetail() {
+    panel.classList.remove("open");
+    const prev = selectedId;
+    selectedId = null;
+    const p = planes.get(prev);
+    if (p) p.marker.setIcon(planeIcon(p.data, false));
+  }
+
+  // Status key → { text, css-class } for the detail panel
+  const STATUS_META = {
+    ground:    ["On ground",   "st-level"],
+    holding:   ["Holding",     "st-delay"],
+    approach:  ["On approach", "st-descend"],
+    departing: ["Departing",   "st-climb"],
+    climb:     ["Climbing",    "st-climb"],
+    descend:   ["Descending",  "st-descend"],
+    cruise:    ["En route",    "st-level"]
+  };
+
+  function renderDetail(d) {
+    $("dCall").textContent = d.callsign || "(no callsign)";
+    $("dIcao").textContent = d.icao24.toUpperCase();
+    $("dCountry").textContent = d.country || "—";
+
+    // Airline (name + brand-colour dot)
+    const al = d.airline || UNKNOWN_AIRLINE;
+    $("dAirlineName").textContent = al.name + (al.code && al.code !== "—" ? ` · ${al.code}` : "");
+    $("dAirlineDot").style.background = al.color;
+
+    // Flight status
+    const meta = STATUS_META[d.status ? d.status.key : "cruise"] || ["En route", "st-level"];
+    const stEl = $("dStatus");
+    stEl.textContent = meta[0];
+    stEl.className = "v " + meta[1];
+
+    // Delay row (only when delayed)
+    const delayRow = $("dDelayRow");
+    if (d.delayed) {
+      delayRow.style.display = "";
+      $("dDelay").textContent = d.delayMin
+        ? `Delayed +${d.delayMin} min`
+        : "Holding — possible delay";
+      $("dDelay").className = "v st-delay";
+    } else {
+      delayRow.style.display = "none";
+    }
+
+    // Altitude (prefer barometric, fall back to geometric)
+    $("dAlt").textContent = d.alt != null
+      ? `${fmtNum(Math.round(d.alt))} m` : "—";
+
+    // Speed m/s → km/h
+    $("dSpeed").textContent = d.speed != null
+      ? `${fmtNum(Math.round(d.speed * 3.6))} km/h` : "—";
+
+    // Heading
+    $("dHeading").textContent = d.heading != null
+      ? `${Math.round(d.heading)}° ${compass(d.heading)}` : "—";
+
+    // Vertical rate → climbing / descending / level
+    const vr = d.vertRate;
+    const vrEl = $("dVert");
+    if (vr == null) {
+      vrEl.textContent = "—";
+      vrEl.className = "v tnum";
+    } else if (vr > 0.5) {
+      vrEl.textContent = `▲ Climbing ${fmtNum(Math.round(vr * 60))} m/min`;
+      vrEl.className = "v tnum vr-climb";
+    } else if (vr < -0.5) {
+      vrEl.textContent = `▼ Descending ${fmtNum(Math.abs(Math.round(vr * 60)))} m/min`;
+      vrEl.className = "v tnum vr-descend";
+    } else {
+      vrEl.textContent = "● Level";
+      vrEl.className = "v tnum vr-level";
+    }
+
+    $("dBadge").style.display = d.airport ? "inline-block" : "none";
+  }
+
+  // Heading degrees → 8-point compass label
+  function compass(deg) {
+    const dirs = ["N","NE","E","SE","S","SW","W","NW"];
+    return dirs[Math.round(deg / 45) % 8];
+  }
+
+  /* ============================================================
+     STATUS / HEADER updates
+     ============================================================ */
+  function setStatus(kind, msg) {
+    const dot = $("statusDot");
+    dot.className = "dot" + (kind === "ok" ? "" : " " + kind);
+    $("statusMsg").textContent = msg;
+    $("statusMsg").style.color =
+      kind === "error" ? "var(--danger)" :
+      kind === "warn"  ? "var(--accent-warm)" : "var(--ok)";
+  }
+
+  /* ============================================================
+     DATA FETCH + POLL LOOP
+     ------------------------------------------------------------
+     - Builds the bbox query
+     - Adds Basic auth header if credentials are configured
+     - On success: parse states, update planes, prune, refresh UI
+     - On empty / error / rate-limit: show a message but KEEP the
+       last good data on screen and never break the loop.
+     ============================================================ */
+  // The bounding-box query string shared by every source
+  function bboxQuery() {
+    const b = CONFIG.bbox;
+    return `?lamin=${b.lamin}&lamax=${b.lamax}&lomin=${b.lomin}&lomax=${b.lomax}`;
+  }
+
+  // Which source we're using: null = not yet probed, true = local
+  // server.py (authenticated, same-origin), false = public proxy.
+  let useServer = null;
+
+  // Fetch + normalize an OpenSky-shaped { time, states } object,
+  // preferring the local server and falling back to the public proxy.
+  // Throws tagged errors ("RATELIMIT", "HTTP…") that poll() translates.
+  async function fetchStates() {
+    const q = bboxQuery();
+
+    // One-time probe: is the bundled server running at serverEndpoint?
+    if (useServer === null) {
+      try {
+        const r = await fetch(CONFIG.api.serverEndpoint + q, { cache: "no-store" });
+        if (r.ok) {
+          const j = await r.json();
+          if (j && (Array.isArray(j.states) || j.states === null)) {
+            useServer = true;                 // it's our server
+            if (j.error) throw new Error(/limit/i.test(j.error) ? "RATELIMIT" : "HTTPserver");
+            return j;
+          }
+        }
+        useServer = false;                     // some other 200 (static host)
+      } catch (e) {
+        if (e.message === "RATELIMIT") throw e; // server up but rate limited
+        useServer = false;                     // no server → use proxy
+      }
+    }
+
+    if (useServer) {
+      const r = await fetch(CONFIG.api.serverEndpoint + q, { cache: "no-store" });
+      if (r.status === 429) throw new Error("RATELIMIT");
+      if (!r.ok) throw new Error("HTTP" + r.status);
+      const j = await r.json();
+      if (j.error) throw new Error(/limit/i.test(j.error) ? "RATELIMIT" : "HTTPserver");
+      return j;
+    }
+
+    // Public proxy path (anonymous OpenSky)
+    const target = CONFIG.api.url + q;
+    const url = CONFIG.proxy.enabled
+      ? CONFIG.proxy.template.replace("{target}", encodeURIComponent(target))
+      : target;
+    const r = await fetch(url);
+    if (r.status === 429) throw new Error("RATELIMIT");
+    if (!r.ok) throw new Error("HTTP" + r.status);
+    return await extractOpenSky(r);            // unwrap proxy envelope
+  }
+
+  // Pull the raw OpenSky JSON text out of whatever the proxy returned,
+  // then parse it. Returns the parsed object, or throws a tagged error
+  // (e.g. "RATELIMIT") that poll() maps to a friendly status message.
+  async function extractOpenSky(res) {
+    let text;
+    if (CONFIG.proxy.enabled && CONFIG.proxy.format === "wrapped") {
+      const wrap = await res.json();          // { contents, status }
+      text = wrap.contents;                    // string body from OpenSky
+    } else {
+      text = await res.text();
+    }
+    // OpenSky's rate-limit reply is the plain text "Too many requests",
+    // which comes back through the proxy with a 200 — detect it here.
+    if (/too many requests/i.test(text)) throw new Error("RATELIMIT");
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error("BADBODY");             // HTML error page, etc.
+    }
+  }
+
+  // Ingest a list of normalized aircraft objects (shared by live +
+  // demo). Handles airport-highlight flags, marker upsert, pruning,
+  // filter re-apply, selected-panel refresh, and the header count.
+  function ingest(list) {
+    let delayed = 0;
+    for (const d of list) {
+      const rec = planes.get(d.icao24);            // prior record (for trail)
+      d.airport = state.highlightAirport && nearAirport(d.lat, d.lon, d.alt);
+      d.airline = airlineOf(d.callsign);
+      d.status  = classifyStatus(d, rec);
+      // Delayed: explicit demo delay, OR a live holding pattern
+      d.delayed = (d.delayMin != null && d.delayMin > 0) ||
+                  d.status.key === "holding";
+      if (d.delayed) delayed++;
+      upsertPlane(d.icao24, d);
+    }
+    pruneMissing();
+    applyFilter();
+    buildAirlinePanel();
+    if (selectedId && planes.has(selectedId)) {
+      renderDetail(planes.get(selectedId).data);
+    }
+    $("aircraftCount").textContent = list.length;
+    updateDelayedCount(delayed);
+    lastGoodTime = new Date();
+    stampUpdated();
+  }
+
+  // Header "delayed" chip
+  function updateDelayedCount(n) {
+    const chip = $("delayChip");
+    if (n > 0) {
+      chip.style.display = "inline-flex";
+      $("delayCount").textContent = n;
+    } else {
+      chip.style.display = "none";
+    }
+  }
+
+  // Rebuild the "Airlines in view" list (also the airline legend).
+  // Clicking a row isolates that carrier so only its routes show.
+  function buildAirlinePanel() {
+    const counts = new Map();  // code -> { name, color, n }
+    for (const p of planes.values()) {
+      const a = p.data.airline || UNKNOWN_AIRLINE;
+      const key = a.code || "—";
+      if (!counts.has(key)) counts.set(key, { name: a.name, color: a.color, n: 0 });
+      counts.get(key).n++;
+    }
+    const wrap = $("airlineList");
+    const rows = [...counts.entries()].sort((a, b) => b[1].n - a[1].n);
+    wrap.innerHTML = rows.map(([code, v]) => `
+      <button class="al-row${state.airlineFilter === code ? " active" : ""}"
+              data-code="${code}">
+        <span class="al-dot" style="background:${v.color}"></span>
+        <span class="al-name">${v.name}</span>
+        <span class="al-count tnum">${v.n}</span>
+      </button>`).join("") ||
+      `<div class="al-empty">No aircraft in view</div>`;
+  }
+
+  // Track consecutive live failures so we can auto-fall back to demo.
+  let liveFailStreak = 0;
+  function noteLiveFail() {
+    liveFailStreak++;
+    if (state.mode === "live" && liveFailStreak >= CONFIG.demo.autoAfterFails) {
+      switchMode("demo", /*auto*/ true);
+    }
+  }
+
+  async function poll() {
+    try {
+      // fetchStates() picks server → proxy and throws tagged errors
+      let json;
+      try {
+        json = await fetchStates();
+      } catch (e) {
+        const m = e.message || "";
+        if (m === "RATELIMIT") {
+          setStatus("warn", useServer
+            ? "OpenSky rate limit — showing last data."
+            : "OpenSky busy (shared proxy limit) — showing last data.");
+        } else if (m.startsWith("HTTP")) {
+          setStatus("error", `Feed returned ${m} — retrying…`);
+        } else {
+          setStatus("warn", "Feed unavailable — showing last data.");
+        }
+        noteLiveFail();
+        return;
+      }
+
+      const states = Array.isArray(json.states) ? json.states : [];
+      // The local server tags responses with _auth (true when it used
+      // an OAuth2 token). Used only for the status label.
+      const authed = json._auth === true;
+      liveFailStreak = 0; // a valid response resets the failure streak
+
+      if (states.length === 0) {
+        // Empty box (or momentary gap) — keep whatever's on screen.
+        // A legitimately empty box is NOT a failure, so no fallback.
+        setStatus("warn", "No aircraft reported right now — holding last view.");
+        stampUpdated();
+        return;
+      }
+
+      // ---- Parse each state vector via the index map ----
+      const list = [];
+      for (const s of states) {
+        const lat = s[IDX.latitude];
+        const lon = s[IDX.longitude];
+        if (lat == null || lon == null) continue; // no position → skip
+
+        const alt = s[IDX.baro_altitude] != null
+          ? s[IDX.baro_altitude] : s[IDX.geo_altitude];
+
+        list.push({
+          icao24:   s[IDX.icao24],
+          callsign: (s[IDX.callsign] || "").trim(),
+          country:  s[IDX.origin_country],
+          lat, lon,
+          alt,
+          onGround: s[IDX.on_ground],
+          speed:    s[IDX.velocity],       // m/s
+          heading:  s[IDX.true_track],
+          vertRate: s[IDX.vertical_rate]   // m/s
+        });
+      }
+
+      ingest(list);
+      const src = authed ? "Live · authenticated · "
+                : useServer ? "Live · server · "
+                : "Live · ";
+      setStatus("ok", src + `${list.length} aircraft tracked`);
+
+    } catch (err) {
+      // Network / CORS / JSON error — never let the loop die
+      console.error("[poll] fetch failed:", err);
+      setStatus("error",
+        "Connection problem — showing last data. Check network / CORS proxy in CONFIG.");
+      noteLiveFail();
+    }
+  }
+
+  function stampUpdated() {
+    $("lastUpdated").textContent = fmtTime(lastGoodTime || new Date());
+  }
+
+  /* ============================================================
+     DEMO FEED — synthetic Jeju-area traffic
+     ------------------------------------------------------------
+     Used as a fallback when live OpenSky data can't get through
+     (shared-proxy rate limits). Planes advance along their heading
+     each cycle and flow through the SAME ingest() pipeline as live
+     data, so interpolation, trails, colors and the panel all behave
+     identically. Clearly badged "DEMO" so it's never mistaken for
+     real traffic.
+     ============================================================ */
+  const DEMO = {
+    fleet: [],
+    // [callsign prefix, origin country] — Korean & regional carriers
+    carriers: [
+      ["KAL", "South Korea"], ["AAR", "South Korea"], ["JJA", "South Korea"],
+      ["TWB", "South Korea"], ["JNA", "South Korea"], ["ABL", "South Korea"],
+      ["CQH", "China"],       ["CES", "China"],       ["ANA", "Japan"]
+    ],
+    init() {
+      const b = CONFIG.bbox;
+      this.fleet = [];
+      for (let i = 0; i < CONFIG.demo.count; i++) {
+        const c = this.carriers[i % this.carriers.length];
+        const nearRwy = Math.random() < 0.35;   // some arriving/departing CJU
+        // ~25% of flights carry a schedule delay (demo only — OpenSky
+        // has no delay data). These get the "Delayed" treatment.
+        const delayMin = Math.random() < 0.25
+          ? 10 + Math.floor(Math.random() * 40) : 0;
+        this.fleet.push({
+          icao24: "d" + i.toString(16).padStart(2, "0") +
+                  Math.floor(Math.random() * 65536).toString(16).padStart(4, "0"),
+          callsign: c[0] + (100 + Math.floor(Math.random() * 899)),
+          country: c[1],
+          lat: nearRwy ? CONFIG.airport.lat + (Math.random() - 0.5) * 0.14
+                       : b.lamin + Math.random() * (b.lamax - b.lamin),
+          lon: nearRwy ? CONFIG.airport.lon + (Math.random() - 0.5) * 0.14
+                       : b.lomin + Math.random() * (b.lomax - b.lomin),
+          alt: nearRwy ? 300 + Math.random() * 1400
+                       : 2500 + Math.random() * 10500,
+          heading: Math.random() * 360,
+          speed: nearRwy ? 75 + Math.random() * 55       // m/s (approach)
+                         : 190 + Math.random() * 90,      // m/s (cruise)
+          vertRate: nearRwy ? (Math.random() < 0.5 ? -1 : 1) * (3 + Math.random() * 6)
+                            : (Math.random() - 0.5) * 3,
+          delayMin
+        });
+      }
+    },
+    // Advance one poll interval and return a fresh snapshot list
+    step() {
+      const dt = CONFIG.pollInterval / 1000;   // seconds
+      const b = CONFIG.bbox, pad = 0.18;
+      for (const p of this.fleet) {
+        const dist = p.speed * dt;             // metres travelled
+        p.lat += (dist * Math.cos(p.heading * Math.PI / 180)) / 111320;
+        p.lon += (dist * Math.sin(p.heading * Math.PI / 180)) /
+                 (111320 * Math.cos(p.lat * Math.PI / 180));
+        // Steer back toward the box if drifting out; else gently wander
+        if (p.lat < b.lamin - pad || p.lat > b.lamax + pad ||
+            p.lon < b.lomin - pad || p.lon > b.lomax + pad) {
+          p.heading = (p.heading + 180 + (Math.random() - 0.5) * 40 + 360) % 360;
+        } else {
+          p.heading = (p.heading + (Math.random() - 0.5) * 8 + 360) % 360;
+        }
+        p.alt = Math.max(0, p.alt + p.vertRate * dt);
+      }
+      // Return copies so ingest doesn't mutate our source fleet
+      return this.fleet.map(p => ({ ...p }));
+    }
+  };
+
+  function runDemo() {
+    if (DEMO.fleet.length === 0) DEMO.init();
+    ingest(DEMO.step());
+    setStatus("ok", `Demo · ${DEMO.fleet.length} synthetic aircraft`);
+  }
+
+  /* ============================================================
+     MODE SWITCHING (live ⇄ demo) + unified tick loop
+     ============================================================ */
+  function clearAllPlanes() {
+    for (const [, p] of planes) {
+      map.removeLayer(p.marker);
+      map.removeLayer(p.trail);
+    }
+    planes.clear();
+    closeDetail();
+  }
+
+  function switchMode(mode, auto) {
+    if (mode === state.mode && !auto) return;
+    state.mode = mode;
+    clearAllPlanes();            // avoid mixing live + demo aircraft
+
+    // Reflect in the segmented control + header badge
+    [...$("dataSeg").children].forEach(b =>
+      b.classList.toggle("active", b.dataset.mode === mode));
+    $("modeBadge").style.display = mode === "demo" ? "inline-flex" : "none";
+
+    if (mode === "demo") {
+      DEMO.init();
+      if (auto) {
+        setStatus("warn", "Live feed unavailable — switched to DEMO data.");
+      }
+      runDemo();
+    } else {
+      liveFailStreak = 0;
+      setStatus("ok", "Reconnecting to OpenSky…");
+      poll();
+    }
+  }
+
+  // One tick dispatches to the active data source
+  function tick() {
+    if (state.mode === "demo") runDemo();
+    else poll();
+  }
+
+  // Start immediately, then on the configured interval
+  tick();
+  setInterval(tick, CONFIG.pollInterval);
+
+  /* ============================================================
+     UI WIRING (controls, panel, keyboard)
+     ============================================================ */
+
+  // Data source toggle (Live / Demo)
+  $("dataSeg").addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    switchMode(btn.dataset.mode, false);
+  });
+
+  // Map theme toggle
+  $("themeSeg").addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    const theme = btn.dataset.theme;
+    if (theme === currentTheme) return;
+
+    // Drive CSS variables + the tile-pane dark filter via data-theme
+    document.documentElement.dataset.theme = theme;
+    currentTheme = theme;
+
+    // update segmented active state
+    [...$("themeSeg").children].forEach(b =>
+      b.classList.toggle("active", b.dataset.theme === theme));
+  });
+
+  // Altitude filter mode
+  $("filterMode").addEventListener("change", (e) => {
+    state.filterMode = e.target.value;
+    // slider only matters when filtering
+    $("altSlider").disabled = state.filterMode === "all";
+    applyFilter();
+  });
+
+  // Altitude threshold slider
+  $("altSlider").addEventListener("input", (e) => {
+    state.altThreshold = Number(e.target.value);
+    $("altValue").textContent = `${fmtNum(state.altThreshold)} m`;
+    if (state.filterMode !== "all") applyFilter();
+  });
+  $("altSlider").disabled = true; // default mode is "all"
+
+  // Airport highlight toggle — recompute flags immediately
+  $("highlightAirport").addEventListener("change", (e) => {
+    state.highlightAirport = e.target.checked;
+    for (const p of planes.values()) {
+      p.data.airport = state.highlightAirport &&
+        nearAirport(p.data.lat, p.data.lon, p.data.alt);
+      p.marker.setIcon(planeIcon(p.data, p.data.icao24 === selectedId));
+    }
+  });
+
+  // Highlight delayed / holding — CSS-only toggle via a root attribute
+  $("highlightDelayed").addEventListener("change", (e) => {
+    state.highlightDelayed = e.target.checked;
+    if (e.target.checked) document.documentElement.setAttribute("data-hl-delayed", "");
+    else document.documentElement.removeAttribute("data-hl-delayed");
+  });
+
+  // Colour planes by Altitude or Airline
+  $("colorSeg").addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    state.colorBy = btn.dataset.color;
+    [...$("colorSeg").children].forEach(b =>
+      b.classList.toggle("active", b.dataset.color === state.colorBy));
+    // Altitude legend only makes sense in altitude mode
+    $("legend").style.display = state.colorBy === "altitude" ? "" : "none";
+    recolorAll();
+  });
+
+  // Airline isolation — click a carrier to show only its routes
+  $("airlineList").addEventListener("click", (e) => {
+    const row = e.target.closest(".al-row");
+    if (!row) return;
+    const code = row.dataset.code;
+    // Toggle: clicking the active airline clears the filter
+    state.airlineFilter = state.airlineFilter === code ? null : code;
+    $("airlineReset").style.display = state.airlineFilter ? "" : "none";
+    buildAirlinePanel();
+    applyFilter();
+  });
+  $("airlineReset").addEventListener("click", () => {
+    state.airlineFilter = null;
+    $("airlineReset").style.display = "none";
+    buildAirlinePanel();
+    applyFilter();
+  });
+
+  // Detail panel close
+  $("dClose").addEventListener("click", closeDetail);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeDetail();
+  });
+
+  // Clicking empty map area deselects
+  map.on("click", closeDetail);
+  </script>
+</body>
+</html>
