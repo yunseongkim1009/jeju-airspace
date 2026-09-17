@@ -1427,12 +1427,11 @@
   let liveFailStreak = 0;
   function noteLiveFail() {
     liveFailStreak++;
-    // Only fall back to the synthetic demo when there's NO real backend
-    // (i.e. the flaky public proxy). With a server/serverless function
-    // in front of OpenSky, keep showing the last real data and just
-    // reconnect — the user asked for real flights, not synthetic ones.
-    if (state.mode === "live" && !useServer &&
-        liveFailStreak >= CONFIG.demo.autoAfterFails) {
+    // Fall back to the synthetic demo so the map is never blank. Once a
+    // real response arrives (e.g. after OpenSky credentials are added to
+    // the server / Vercel env), the streak resets and live data takes
+    // over automatically — no demo.
+    if (state.mode === "live" && liveFailStreak >= CONFIG.demo.autoAfterFails) {
       switchMode("demo", /*auto*/ true);
     }
   }
