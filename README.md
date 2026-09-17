@@ -7,8 +7,11 @@
 **A real-time flight dashboard for the airspace over Jeju Island (제주도), South Korea.**
 Live ADS-B aircraft from the [OpenSky Network](https://opensky-network.org/), rendered on a smooth, animated map — planes rotate to their heading, glide between updates, trail their recent path, and colour themselves by altitude or airline.
 
+### [▶ Open the live demo →](https://jeju-airspace.vercel.app/)
+
 <br>
 
+[![Live demo](https://img.shields.io/badge/▶_Live_demo-jeju--airspace.vercel.app-000?style=flat-square)](https://jeju-airspace.vercel.app/)
 [![Vanilla JS](https://img.shields.io/badge/Vanilla_JS-no_build_step-f7df1e?style=flat-square&logo=javascript&logoColor=000)](#)
 [![Leaflet](https://img.shields.io/badge/Leaflet-1.9-199900?style=flat-square&logo=leaflet&logoColor=fff)](https://leafletjs.com/)
 [![OpenSky](https://img.shields.io/badge/OpenSky-REST_API-0a66c2?style=flat-square)](https://opensky-network.org/)
@@ -152,6 +155,7 @@ A couple of honest limitations, by design:
 
 - **OpenSky's anonymous tier is tight** (~1 request / 10 s, shared) and its public-proxy IP is frequently rate-limited. For dependable live data, use the [authenticated server](#-authenticated-live-data-recommended).
 - **There is no schedule/delay field in OpenSky's live feed.** It's raw ADS-B — position, speed, altitude. So "delayed" here means a detected **holding pattern** (aircraft circling near the field), which is the best real-time proxy available without a paid schedule API. In demo mode, delays are assigned so the feature is fully visible. Wiring in a schedule provider (AeroDataBox / FlightAware) is a natural next step.
+- **The [hosted demo](https://jeju-airspace.vercel.app/) is static** (no `server.py`), so it uses the public proxy and, when that's rate-limited, the demo feed. Run it locally with the [authenticated server](#-authenticated-live-data-recommended) — or add a serverless function — for dependable real traffic.
 
 ---
 
